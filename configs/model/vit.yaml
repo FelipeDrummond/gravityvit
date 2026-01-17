@@ -1,0 +1,24 @@
+# Single-view Vision Transformer configuration
+
+name: vit
+type: vit
+
+# Architecture (using timm model names)
+backbone: vit_base_patch16_224
+pretrained: true
+num_classes: 22
+
+# Input configuration
+input_size: 224
+in_channels: 3
+patch_size: 16
+
+# ViT-specific settings
+embed_dim: 768
+depth: 12
+num_heads: 12
+mlp_ratio: 4.0
+
+# Dropout
+dropout: 0.1
+attn_dropout: 0.0

@@ -1,0 +1,20 @@
+# Conda environment for GravityViT
+# Works on both Apple Silicon (MPS) and Linux (CUDA)
+#
+# Usage:
+#   conda env create -f environment.yml
+#   conda activate gravityvit
+#
+# For CUDA support on Linux, after activation run:
+#   pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
+
+name: gravityvit
+channels:
+  - pytorch
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.10
+  - pip
+  - pip:
+      - -r requirements.txt

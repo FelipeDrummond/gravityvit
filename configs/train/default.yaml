@@ -1,0 +1,54 @@
+# Default training configuration
+
+# Training loop
+epochs: 100
+grad_accumulation_steps: 1
+
+# Optimizer
+optimizer:
+  name: adamw
+  lr: 1e-4
+  weight_decay: 0.05
+  betas: [0.9, 0.999]
+
+# Learning rate scheduler
+scheduler:
+  name: cosine
+  warmup_epochs: 5
+  min_lr: 1e-6
+
+# Loss function
+loss:
+  name: cross_entropy  # or focal_loss
+  label_smoothing: 0.1
+  # Focal loss settings (if loss.name == focal_loss)
+  focal_gamma: 2.0
+  focal_alpha: null  # Set to class weights for imbalanced data
+
+# Early stopping
+early_stopping:
+  enabled: true
+  patience: 10
+  metric: val_accuracy
+  mode: max
+
+# Checkpointing
+checkpoint:
+  save_best: true
+  save_last: true
+  metric: val_accuracy
+  mode: max
+
+# Mixed precision training
+mixed_precision: true
+
+# Gradient clipping
+grad_clip: 1.0
+
+# Device configuration
+# Options: auto, cuda, mps, cpu
+# - auto: Automatically detect best available device (cuda > mps > cpu)
+# - cuda: Use NVIDIA GPU (Linux VM with CUDA)
+# - mps: Use Apple Silicon GPU (Mac M1/M2/M3/M4)
+# - cpu: Use CPU only
+device: auto

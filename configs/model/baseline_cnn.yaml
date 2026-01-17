@@ -1,0 +1,17 @@
+# CNN Baseline model configuration
+# Based on Bahaadini et al. 2018 Gravity Spy classifier
+
+name: baseline_cnn
+type: cnn
+
+# Architecture
+backbone: resnet50
+pretrained: true
+num_classes: 22
+
+# Input configuration
+input_size: 224
+in_channels: 3
+
+# Dropout
+dropout: 0.5
