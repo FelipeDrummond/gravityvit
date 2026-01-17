@@ -12,12 +12,12 @@ experiment:
   name: gravityvit
   seed: 42
 
-# Weights & Biases logging
-wandb:
-  project: gravityvit
-  entity: null  # Set to your W&B username or team
-  mode: online  # online, offline, or disabled
-  tags: []
+# MLflow experiment tracking
+mlflow:
+  experiment_name: gravityvit
+  tracking_uri: null  # Set to remote server URI, or null for local ./mlruns
+  run_name: null  # Auto-generated if null
+  tags: {}
 
 # Hydra configuration
 hydra:

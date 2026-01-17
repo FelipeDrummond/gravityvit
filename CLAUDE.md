@@ -85,7 +85,7 @@ notebooks/         # Data exploration, baseline validation, attention analysis
 
 - **PyTorch 2.0+** with **Timm** for pretrained ViT models
 - **Hydra** for configuration management
-- **Weights & Biases** for experiment tracking
+- **MLflow** for experiment tracking
 - **scikit-learn** for evaluation metrics
 
 ## Dataset
