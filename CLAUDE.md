@@ -8,7 +8,7 @@ GravityViT applies Vision Transformer architectures to classify transient noise 
 
 ## Project Status
 
-This repository is in the **planning and initial setup phase**. Only documentation files exist currently. See PROJECT_SUMMARY.MD for the 6-week sprint breakdown and 18-ticket implementation roadmap.
+Project scaffolding complete. Core implementation in progress. See Linear board for current sprint tasks.
 
 ## Architecture
 
@@ -30,7 +30,7 @@ Key design decisions:
 
 ## Development Environment
 
-This project supports both **Apple Silicon (MPS)** for local development and **CUDA** for training on Linux VMs.
+Supports both **Apple Silicon (MPS)** for local development and **CUDA** for training on Linux VMs.
 
 ```bash
 # Create conda environment
@@ -39,46 +39,48 @@ conda activate gravityvit
 
 # For CUDA on Linux VM (after activation):
 pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
+
+# Set up pre-commit hooks
+pre-commit install
 ```
 
 Device selection is automatic (`train.device: auto` in config) - detects CUDA > MPS > CPU.
 
-## Planned Commands
-
-Once implemented, the main entry points will be:
+## Commands
 
 ```bash
-# Install dependencies (alternative to conda)
-pip install -r requirements.txt
-
-# Download Gravity Spy dataset from Zenodo
-python scripts/download_data.py
-
-# Train models (Hydra configuration)
+# Training (Hydra configuration)
 python scripts/train.py model=baseline_cnn
-python scripts/train.py model=multiview_vit fusion=cross_attention
+python scripts/train.py model=multiview_vit
+python scripts/train.py model=vit data.batch_size=32 train.epochs=100
 
-# Evaluate and visualize attention
-python scripts/evaluate.py --visualize-attention
+# MLflow experiment tracking
+mlflow ui  # Opens dashboard at http://localhost:5000
+
+# Code quality
+pre-commit run --all-files
+pytest tests/
 ```
 
-Configuration uses Hydra with YAML files in `configs/`. Override via CLI:
-```bash
-python scripts/train.py data.batch_size=32 train.epochs=100
-```
-
-## Planned Project Structure
+## Project Structure
 
 ```
 src/
-├── data/          # GravitySpy dataset loader, transforms, Zenodo download
-├── models/        # CNN baseline, single-view ViT, multi-view ViT with cross-attention
-├── training/      # Training loop, focal loss, weighted CE, metrics
-└── analysis/      # Attention visualization, GradCAM, interpretability
+├── data/          # Dataset loader, transforms
+├── models/        # CNN baseline, ViT, multi-view ViT
+├── training/      # Training loop, losses, metrics
+├── analysis/      # Attention visualization, GradCAM
+└── utils.py       # Device detection, helpers
 
-configs/           # Hydra YAML configs for model, data, training
-scripts/           # Entry points: download_data.py, train.py, evaluate.py
-notebooks/         # Data exploration, baseline validation, attention analysis
+configs/
+├── config.yaml    # Main config (composes others)
+├── model/         # Model configs (baseline_cnn, vit, multiview_vit)
+├── data/          # Dataset config (gravityspy)
+└── train/         # Training config (default)
+
+scripts/           # Entry points
+notebooks/         # Analysis notebooks
+tests/             # Unit tests
 ```
 
 ## Technology Stack
@@ -87,9 +89,10 @@ notebooks/         # Data exploration, baseline validation, attention analysis
 - **Hydra** for configuration management
 - **MLflow** for experiment tracking
 - **scikit-learn** for evaluation metrics
+- **Pre-commit** with black, isort, flake8
 
 ## Dataset
 
 Gravity Spy training set from Zenodo (DOI: 10.5281/zenodo.1476156):
 - ~8,500 labeled glitches across 22 morphological classes
-- Each sample has 4 spectrogram views at different time durations
+- Each sample has 4 spectrogram views at different time durations (0.5s, 1.0s, 2.0s, 4.0s)
