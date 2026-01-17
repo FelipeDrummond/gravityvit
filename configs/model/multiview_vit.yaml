@@ -1,0 +1,35 @@
+# Multi-view Vision Transformer with Cross-Attention Fusion
+
+name: multiview_vit
+type: multiview_vit
+
+# Architecture (using timm model names)
+backbone: vit_base_patch16_224
+pretrained: true
+num_classes: 22
+
+# Input configuration
+input_size: 224
+in_channels: 3
+patch_size: 16
+
+# Multi-view settings
+num_views: 4  # 0.5s, 1.0s, 2.0s, 4.0s time scales
+share_encoder: true  # Use shared ViT encoder for all views
+
+# ViT encoder settings
+embed_dim: 768
+depth: 12
+num_heads: 12
+mlp_ratio: 4.0
+
+# Cross-attention fusion settings
+fusion:
+  type: cross_attention
+  num_heads: 8
+  num_layers: 2
+  dropout: 0.1
+
+# Dropout
+dropout: 0.1
+attn_dropout: 0.0

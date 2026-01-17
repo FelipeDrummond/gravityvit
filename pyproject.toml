@@ -1,0 +1,30 @@
+[project]
+name = "gravityvit"
+version = "0.1.0"
+description = "Vision Transformer for LIGO Gravitational Wave Glitch Classification"
+readme = "README.md"
+requires-python = ">=3.10"
+
+[tool.black]
+line-length = 88
+target-version = ["py310"]
+include = '\.pyi?$'
+exclude = '''
+/(
+    \.git
+    | \.venv
+    | build
+    | dist
+    | notebooks
+)/
+'''
+
+[tool.isort]
+profile = "black"
+line_length = 88
+skip = [".git", ".venv", "build", "dist", "notebooks"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_functions = ["test_*"]
