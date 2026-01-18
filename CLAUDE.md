@@ -8,7 +8,7 @@ GravityViT applies Vision Transformer architectures to classify transient noise 
 
 ## Project Status
 
-Project scaffolding complete. Core implementation in progress. See Linear board for current sprint tasks.
+Data pipeline complete. Core model implementation in progress. See Linear board for current sprint tasks.
 
 ## Architecture
 
@@ -49,6 +49,14 @@ Device selection is automatic (`train.device: auto` in config) - detects CUDA > 
 ## Commands
 
 ```bash
+# Download dataset from Zenodo
+python scripts/download_data.py                # Downloads HDF5 file (~3.3 GB)
+python scripts/download_data.py --include-png  # Also download PNG archive (~9.6 GB)
+
+# Data exploration (Marimo notebook)
+marimo run notebooks/01_data_exploration.py
+marimo edit notebooks/01_data_exploration.py  # Interactive editing mode
+
 # Training (Hydra configuration)
 python scripts/train.py model=baseline_cnn
 python scripts/train.py model=multiview_vit
@@ -88,6 +96,7 @@ tests/             # Unit tests
 - **PyTorch 2.0+** with **Timm** for pretrained ViT models
 - **Hydra** for configuration management
 - **MLflow** for experiment tracking
+- **Marimo** for reactive notebooks (stored as .py files)
 - **scikit-learn** for evaluation metrics
 - **Pre-commit** with black, isort, flake8
 
@@ -96,3 +105,5 @@ tests/             # Unit tests
 Gravity Spy training set from Zenodo (DOI: 10.5281/zenodo.1476156):
 - ~8,500 labeled glitches across 22 morphological classes
 - Each sample has 4 spectrogram views at different time durations (0.5s, 1.0s, 2.0s, 4.0s)
+- Significant class imbalance (see `notebooks/01_data_exploration.py` for analysis)
+- Pre-computed class weights saved to `data/gravityspy/class_weights.npy` after running exploration
