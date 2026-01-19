@@ -121,10 +121,10 @@ def _(HDF5_PATH, h5py):
             else:
                 print(f"Dataset: {full_path}, Shape: {item.shape}, Dtype: {item.dtype}")
 
-    with h5py.File(HDF5_PATH, "r") as f:
+    with h5py.File(HDF5_PATH, "r") as _f:
         print("HDF5 File Structure:")
         print("=" * 50)
-        explore_h5_structure(f)
+        explore_h5_structure(_f)
 
     return (explore_h5_structure,)
 
@@ -153,8 +153,8 @@ def _(metadata):
 
     print(f"Number of classes: {len(classes)}")
     print(f"\nClasses:")
-    for i, cls in enumerate(classes, 1):
-        print(f"  {i:2}. {cls}")
+    for _i, cls in enumerate(classes, 1):
+        print(f"  {_i:2}. {cls}")
 
     print(f"\nSample types: {list(sample_types)}")
 
@@ -183,8 +183,8 @@ def _(DATA_DIR, metadata, plt):
     ax1.set_title("Class Distribution")
 
     # Add value labels
-    for i, (bar, val) in enumerate(zip(bars, class_counts.values)):
-        ax1.text(val + 10, i, str(val), va="center", fontsize=8)
+    for _i, (bar, val) in enumerate(zip(bars, class_counts.values)):
+        ax1.text(val + 10, _i, str(val), va="center", fontsize=8)
 
     # Percentage pie chart
     ax2 = axes1[1]
@@ -256,11 +256,11 @@ def _(metadata):
 
     print("Dataset Splits:")
     print("=" * 40)
-    for split_type in ["train", "validation", "test"]:
-        if split_type in split_counts.index:
-            count = split_counts[split_type]
-            pct = split_percentages[split_type]
-            print(f"  {split_type:12}: {count:5,} samples ({pct}%)")
+    for _split_type in ["train", "validation", "test"]:
+        if _split_type in split_counts.index:
+            count = split_counts[_split_type]
+            pct = split_percentages[_split_type]
+            print(f"  {_split_type:12}: {count:5,} samples ({pct}%)")
 
     return split_counts, split_percentages
 
@@ -270,16 +270,16 @@ def _(DATA_DIR, metadata, plt):
     # Class distribution per split
     fig2, axes2 = plt.subplots(1, 3, figsize=(18, 6))
 
-    for ax, split_type in zip(axes2, ["train", "validation", "test"]):
-        if split_type in metadata["sample_type"].values:
-            split_data = metadata[metadata["sample_type"] == split_type]
+    for _ax, _split_type in zip(axes2, ["train", "validation", "test"]):
+        if _split_type in metadata["sample_type"].values:
+            split_data = metadata[metadata["sample_type"] == _split_type]
             split_class_counts = split_data["label"].value_counts().sort_index()
 
-            ax.barh(range(len(split_class_counts)), split_class_counts.values)
-            ax.set_yticks(range(len(split_class_counts)))
-            ax.set_yticklabels(split_class_counts.index, fontsize=8)
-            ax.set_xlabel("Number of Samples")
-            ax.set_title(f"{split_type.capitalize()} Set ({len(split_data):,} samples)")
+            _ax.barh(range(len(split_class_counts)), split_class_counts.values)
+            _ax.set_yticks(range(len(split_class_counts)))
+            _ax.set_yticklabels(split_class_counts.index, fontsize=8)
+            _ax.set_xlabel("Number of Samples")
+            _ax.set_title(f"{_split_type.capitalize()} Set ({len(split_data):,} samples)")
 
     plt.tight_layout()
     plt.savefig(DATA_DIR / "split_distribution.png", dpi=150, bbox_inches="tight")
@@ -323,77 +323,69 @@ def _(mo):
 @app.cell
 def _(HDF5_PATH, h5py):
     # Load sample images from HDF5 to analyze time scales
-    with h5py.File(HDF5_PATH, "r") as f:
-        print("Available duration datasets:")
-        duration_keys = []
-        for key in f.keys():
-            if (
-                key.endswith("d0")
-                or key.endswith("d1")
-                or key.endswith("d2")
-                or key.endswith("d3")
-            ):
-                print(f"  {key}: shape={f[key].shape}, dtype={f[key].dtype}")
-                duration_keys.append(key)
+    # HDF5 structure: {class}/{split}/{sample_id}/{timescale}.png
+    time_scale_names = ["0.5.png", "1.0.png", "2.0.png", "4.0.png"]
 
-    return (duration_keys,)
+    with h5py.File(HDF5_PATH, "r") as _f:
+        print("HDF5 Structure: {class}/{split}/{sample_id}/{timescale}.png")
+        print(f"\nTime scales available: {time_scale_names}")
+
+        # Get a sample to show shape
+        first_class = list(_f.keys())[0]
+        first_split = list(_f[first_class].keys())[0]
+        first_sample = list(_f[first_class][first_split].keys())[0]
+        sample_img = _f[first_class][first_split][first_sample]["1.0.png"][:]
+        print(f"Sample image shape: {sample_img.shape}, dtype: {sample_img.dtype}")
+
+    return (time_scale_names,)
 
 
 @app.cell
-def _(DATA_DIR, HDF5_PATH, TIME_SCALES, duration_keys, h5py, metadata, np, plt):
+def _(DATA_DIR, HDF5_PATH, TIME_SCALES, time_scale_names, h5py, metadata, np, plt):
     # Visualize time-scale views for random samples
-    with h5py.File(HDF5_PATH, "r") as f:
-        sorted_duration_keys = sorted(duration_keys)
+    # HDF5 structure: {class}/{split}/{sample_id}/{timescale}.png
+    with h5py.File(HDF5_PATH, "r") as _f:
+        # Select 3 random samples from metadata
+        np.random.seed(42)
+        sample_indices = np.random.choice(len(metadata), 3, replace=False)
 
-        if sorted_duration_keys:
-            # Get number of samples
-            n_samples = f[sorted_duration_keys[0]].shape[0]
+        fig3, axes3 = plt.subplots(3, 4, figsize=(16, 12))
 
-            # Select random samples
-            np.random.seed(42)
-            sample_indices = np.random.choice(n_samples, 3, replace=False)
+        for row, idx in enumerate(sample_indices):
+            row_data = metadata.iloc[idx]
+            _label = row_data["label"]
+            _split = row_data["sample_type"]
+            _sample_id = row_data["gravityspy_id"]
 
-            fig3, axes3 = plt.subplots(3, 4, figsize=(16, 12))
+            for col, (ts_name, time_scale) in enumerate(
+                zip(time_scale_names, TIME_SCALES)
+            ):
+                # Access: class/split/sample_id/timescale.png
+                _img = _f[_label][_split][_sample_id][ts_name][:]
 
-            for row, idx in enumerate(sample_indices):
-                # Get label for this sample
-                label = metadata.iloc[idx]["label"]
+                # Handle channel-first format (1, H, W)
+                if len(_img.shape) == 3 and _img.shape[0] == 1:
+                    _img = _img.squeeze(0)
 
-                for col, (key, time_scale) in enumerate(
-                    zip(sorted_duration_keys, TIME_SCALES)
-                ):
-                    img = f[key][idx]
+                _ax = axes3[row, col]
+                _ax.imshow(_img, cmap="viridis", aspect="auto")
 
-                    # Handle different image formats
-                    if len(img.shape) == 3 and img.shape[0] in [1, 3, 4]:
-                        # Channel-first format
-                        img = np.transpose(img, (1, 2, 0))
+                if row == 0:
+                    _ax.set_title(f"{time_scale}s view", fontsize=12)
+                if col == 0:
+                    _ax.set_ylabel(f"{_label}", fontsize=10)
+                _ax.axis("off")
 
-                    if len(img.shape) == 3 and img.shape[-1] == 1:
-                        img = img.squeeze()
-
-                    ax = axes3[row, col]
-                    if len(img.shape) == 2:
-                        ax.imshow(img, cmap="viridis", aspect="auto")
-                    else:
-                        ax.imshow(img, aspect="auto")
-
-                    if row == 0:
-                        ax.set_title(f"{time_scale}s view", fontsize=12)
-                    if col == 0:
-                        ax.set_ylabel(f"{label}", fontsize=10)
-                    ax.axis("off")
-
-            plt.suptitle(
-                "Multi-Scale Spectrogram Views\n(Same glitch at different time durations)",
-                fontsize=14,
-                y=1.02,
-            )
-            plt.tight_layout()
-            plt.savefig(DATA_DIR / "time_scale_views.png", dpi=150, bbox_inches="tight")
+        plt.suptitle(
+            "Multi-Scale Spectrogram Views\n(Same glitch at different time durations)",
+            fontsize=14,
+            y=1.02,
+        )
+        plt.tight_layout()
+        plt.savefig(DATA_DIR / "time_scale_views.png", dpi=150, bbox_inches="tight")
     fig3
 
-    return axes3, fig3, n_samples, sample_indices, sorted_duration_keys
+    return axes3, fig3, sample_indices
 
 
 @app.cell
@@ -410,76 +402,69 @@ def _(mo):
 
 @app.cell
 def _(classes, metadata):
-    # Create mapping from class to sample indices
-    class_to_indices = {}
-    for label in classes:
-        indices = metadata[metadata["label"] == label].index.tolist()
-        class_to_indices[label] = indices
+    # Create mapping from class to sample metadata rows
+    class_to_samples = {}
+    for _label in classes:
+        samples = metadata[metadata["label"] == _label][
+            ["gravityspy_id", "sample_type"]
+        ].values.tolist()
+        class_to_samples[_label] = samples
 
-    print(f"Class to sample mapping created for {len(class_to_indices)} classes")
+    print(f"Class to sample mapping created for {len(class_to_samples)} classes")
 
-    return (class_to_indices,)
+    return (class_to_samples,)
 
 
 @app.cell
-def _(DATA_DIR, HDF5_PATH, class_to_indices, classes, h5py, np, plt):
+def _(DATA_DIR, HDF5_PATH, class_to_samples, classes, h5py, np, plt):
     # Visualize one sample from each class (using 1.0s time scale)
-    with h5py.File(HDF5_PATH, "r") as f:
-        dur_keys = sorted(
-            [k for k in f.keys() if any(k.endswith(f"d{i}") for i in range(4))]
-        )
+    # HDF5 structure: {class}/{split}/{sample_id}/{timescale}.png
+    with h5py.File(HDF5_PATH, "r") as _f:
+        # Create grid for all 22 classes
+        n_cols = 5
+        n_rows = (len(classes) + n_cols - 1) // n_cols
 
-        if len(dur_keys) >= 2:
-            # Use 1.0s view (usually index 1)
-            view_key = dur_keys[1] if len(dur_keys) > 1 else dur_keys[0]
+        fig4, axes4 = plt.subplots(n_rows, n_cols, figsize=(20, 4 * n_rows))
+        axes4_flat = axes4.flatten()
 
-            # Create grid for all 22 classes
-            n_cols = 5
-            n_rows = (len(classes) + n_cols - 1) // n_cols
+        np.random.seed(42)
 
-            fig4, axes4 = plt.subplots(n_rows, n_cols, figsize=(20, 4 * n_rows))
-            axes4_flat = axes4.flatten()
+        for _i, _label in enumerate(classes):
+            _ax = axes4_flat[_i]
 
-            np.random.seed(42)
+            # Get random sample from this class
+            if class_to_samples[_label]:
+                sample_idx = np.random.randint(len(class_to_samples[_label]))
+                _sample_id, _split = class_to_samples[_label][sample_idx]
 
-            for i, label in enumerate(classes):
-                ax = axes4_flat[i]
+                # Access: class/split/sample_id/1.0.png
+                _img = _f[_label][_split][_sample_id]["1.0.png"][:]
 
-                # Get random sample from this class
-                if class_to_indices[label]:
-                    sample_idx = np.random.choice(class_to_indices[label])
-                    img = f[view_key][sample_idx]
+                # Handle channel-first format (1, H, W)
+                if len(_img.shape) == 3 and _img.shape[0] == 1:
+                    _img = _img.squeeze(0)
 
-                    # Handle different formats
-                    if len(img.shape) == 3 and img.shape[0] in [1, 3, 4]:
-                        img = np.transpose(img, (1, 2, 0))
-                    if len(img.shape) == 3 and img.shape[-1] == 1:
-                        img = img.squeeze()
+                _ax.imshow(_img, cmap="viridis", aspect="auto")
 
-                    if len(img.shape) == 2:
-                        ax.imshow(img, cmap="viridis", aspect="auto")
-                    else:
-                        ax.imshow(img, aspect="auto")
-
-                ax.set_title(
-                    f"{label}\n(n={len(class_to_indices[label])})", fontsize=10
-                )
-                ax.axis("off")
-
-            # Hide unused subplots
-            for j in range(len(classes), len(axes4_flat)):
-                axes4_flat[j].axis("off")
-
-            plt.suptitle(
-                "Sample Spectrograms for Each Glitch Class (1.0s view)",
-                fontsize=14,
-                y=1.01,
+            _ax.set_title(
+                f"{_label}\n(n={len(class_to_samples[_label])})", fontsize=10
             )
-            plt.tight_layout()
-            plt.savefig(DATA_DIR / "class_samples.png", dpi=150, bbox_inches="tight")
+            _ax.axis("off")
+
+        # Hide unused subplots
+        for _j in range(len(classes), len(axes4_flat)):
+            axes4_flat[_j].axis("off")
+
+        plt.suptitle(
+            "Sample Spectrograms for Each Glitch Class (1.0s view)",
+            fontsize=14,
+            y=1.01,
+        )
+        plt.tight_layout()
+        plt.savefig(DATA_DIR / "class_samples.png", dpi=150, bbox_inches="tight")
     fig4
 
-    return axes4, axes4_flat, dur_keys, fig4, n_cols, n_rows, view_key
+    return axes4, axes4_flat, fig4, n_cols, n_rows
 
 
 @app.cell
@@ -644,10 +629,10 @@ def _(TIME_SCALES, class_counts, classes, metadata):
     print(f"Number of classes: {len(classes)}")
     print(f"Time scales: {TIME_SCALES}")
     print(f"\nSplit sizes:")
-    for split in ["train", "validation", "test"]:
-        if split in metadata["sample_type"].values:
-            n = len(metadata[metadata["sample_type"] == split])
-            print(f"  {split}: {n:,} ({n/len(metadata)*100:.1f}%)")
+    for _split in ["train", "validation", "test"]:
+        if _split in metadata["sample_type"].values:
+            n = len(metadata[metadata["sample_type"] == _split])
+            print(f"  {_split}: {n:,} ({n/len(metadata)*100:.1f}%)")
     print(f"\nClass imbalance ratio: {class_counts.max() / class_counts.min():.1f}x")
     return
 

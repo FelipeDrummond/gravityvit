@@ -33,9 +33,15 @@ Key design decisions:
 Supports both **Apple Silicon (MPS)** for local development and **CUDA** for training on Linux VMs.
 
 ```bash
-# Create conda environment
-conda env create -f environment.yml
-conda activate gravityvit
+# Create virtual environment with uv (recommended)
+uv venv
+source .venv/bin/activate
+uv pip install -r requirements.txt
+
+# Or with standard venv
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
 
 # For CUDA on Linux VM (after activation):
 pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
