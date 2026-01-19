@@ -5,7 +5,7 @@ from the Gravity Spy glitch classification dataset.
 """
 
 from pathlib import Path
-from typing import List, Literal, Optional, Union
+from typing import Callable, List, Literal, Optional, Union
 
 import h5py
 import numpy as np
@@ -39,7 +39,7 @@ class GravitySpyDataset(Dataset):
         split: Literal["train", "validation", "test"] = "train",
         mode: Literal["single", "multi"] = "single",
         time_scale: float = 1.0,
-        transform=None,
+        transform: Optional[Callable[[torch.Tensor], torch.Tensor]] = None,
         class_names: Optional[List[str]] = None,
     ):
         self.root = Path(root)
@@ -83,7 +83,7 @@ class GravitySpyDataset(Dataset):
         # We don't keep HDF5 file open to support multiprocessing
         self._h5_file = None
 
-    def _get_h5_file(self):
+    def _get_h5_file(self) -> h5py.File:
         """Get HDF5 file handle (lazy loading for multiprocessing support)."""
         if self._h5_file is None:
             self._h5_file = h5py.File(self.h5_path, "r")
@@ -92,27 +92,26 @@ class GravitySpyDataset(Dataset):
     def __len__(self) -> int:
         return len(self.metadata)
 
-    def _load_image(self, label: str, split: str, sample_id: str, ts_file: str):
+    def _load_image(
+        self, label: str, split: str, sample_id: str, ts_file: str
+    ) -> torch.Tensor:
         """Load a single image from HDF5 file.
 
         Returns:
-            Tensor of shape (C, H, W) where C=3 (RGB expanded from grayscale)
+            Tensor of shape (3, H, W) - RGB expanded from grayscale
         """
         h5 = self._get_h5_file()
         # HDF5 structure: {class}/{split}/{sample_id}/{timescale}.png
-        img = h5[label][split][sample_id][ts_file][:]
+        img = h5[label][split][sample_id][ts_file][:]  # shape: (1, H, W) or (H, W)
 
-        # Handle channel-first format (1, H, W) -> expand to (3, H, W) for RGB
         if len(img.shape) == 3 and img.shape[0] == 1:
-            img = img.squeeze(0)
+            img = img.squeeze(0)  # shape: (H, W)
 
-        # Convert to float32 and normalize to [0, 1]
-        img = img.astype(np.float32) / 255.0
+        img = img.astype(np.float32) / 255.0  # shape: (H, W), dtype: float32
 
-        # Expand grayscale to RGB (3, H, W) for pretrained models
-        img = np.stack([img, img, img], axis=0)
+        img = np.stack([img, img, img], axis=0)  # shape: (3, H, W)
 
-        return torch.from_numpy(img)
+        return torch.from_numpy(img)  # shape: (3, H, W)
 
     def __getitem__(self, idx: int):
         """Get a sample by index.
@@ -144,7 +143,7 @@ class GravitySpyDataset(Dataset):
                 images[ts] = img
             return images, label
 
-    def close(self):
+    def close(self) -> None:
         """Close HDF5 file handle."""
         if self._h5_file is not None:
             self._h5_file.close()

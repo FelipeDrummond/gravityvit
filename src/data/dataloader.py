@@ -15,26 +15,44 @@ from .dataset import GravitySpyDataset
 from .transforms import get_eval_transforms, get_train_transforms
 
 
-def multiview_collate_fn(batch):
+def multiview_collate_fn(
+    batch: List[Tuple[Dict[float, torch.Tensor], int]],
+) -> Tuple[Dict[float, torch.Tensor], torch.Tensor]:
     """Custom collate function for multi-view mode.
 
     Converts list of (images_dict, label) to batched format.
+
+    Args:
+        batch: List of (images_dict, label) tuples from dataset
 
     Returns:
         images: Dict mapping time_scale -> batched tensor (B, C, H, W)
         labels: Tensor of shape (B,)
     """
+    assert len(batch) > 0, "Empty batch received"
+
     images_list, labels = zip(*batch)
 
-    # Get time scales from first sample
     time_scales = list(images_list[0].keys())
 
-    # Stack images for each time scale
-    batched_images = {}
-    for ts in time_scales:
-        batched_images[ts] = torch.stack([img[ts] for img in images_list])
+    # Validate all samples have consistent time scales
+    for i, img_dict in enumerate(images_list):
+        assert set(img_dict.keys()) == set(time_scales), (
+            f"Sample {i} has inconsistent time scales: {set(img_dict.keys())} vs {set(time_scales)}"
+        )
 
-    labels = torch.tensor(labels, dtype=torch.long)
+    batched_images: Dict[float, torch.Tensor] = {}
+    for ts in time_scales:
+        tensors = [img[ts] for img in images_list]
+        # Validate shapes before stacking
+        first_shape = tensors[0].shape
+        for i, t in enumerate(tensors):
+            assert t.shape == first_shape, (
+                f"Shape mismatch at time_scale {ts}, sample {i}: {t.shape} vs {first_shape}"
+            )
+        batched_images[ts] = torch.stack(tensors)  # shape: (B, C, H, W)
+
+    labels = torch.tensor(labels, dtype=torch.long)  # shape: (B,)
     return batched_images, labels
 
 
