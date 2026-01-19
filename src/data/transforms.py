@@ -127,6 +127,9 @@ class MultiViewTransform:
 
     For training, this ensures spatial augmentations (rotation, flip)
     are applied consistently across all time scales.
+
+    Time scale keys are strings (e.g., "0.5", "1.0", "2.0", "4.0") to avoid
+    floating-point comparison issues.
     """
 
     def __init__(self, transform: transforms.Compose, consistent_spatial: bool = True):
@@ -139,14 +142,14 @@ class MultiViewTransform:
         self.transform = transform
         self.consistent_spatial = consistent_spatial
 
-    def __call__(self, images: Dict[float, torch.Tensor]) -> Dict[float, torch.Tensor]:
+    def __call__(self, images: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
         """Apply transform to all views.
 
         Args:
-            images: Dict mapping time_scale -> image tensor
+            images: Dict mapping time_scale string key -> image tensor
 
         Returns:
-            Dict mapping time_scale -> transformed image tensor
+            Dict mapping time_scale string key -> transformed image tensor
         """
         if self.consistent_spatial:
             # Get random state for consistent transforms

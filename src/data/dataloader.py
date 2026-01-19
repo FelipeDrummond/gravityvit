@@ -11,13 +11,51 @@ import torch
 from omegaconf import DictConfig
 from torch.utils.data import DataLoader
 
-from .dataset import GravitySpyDataset
-from .transforms import get_eval_transforms, get_train_transforms
+from .dataset import (
+    GravitySpyDataset,
+    worker_init_fn,
+)
+from .transforms import (
+    MultiViewTransform,
+    get_eval_transforms,
+    get_train_transforms,
+)
+
+
+class CollateError(Exception):
+    """Raised when batch collation fails."""
+
+    pass
+
+
+class MultiViewTransformCollate:
+    """Picklable collate function that applies consistent transforms to multi-view data.
+
+    This class wraps a MultiViewTransform and applies it during collation,
+    ensuring all views in each sample receive the same random spatial transforms.
+    """
+
+    def __init__(self, transform: "MultiViewTransform"):
+        """
+        Args:
+            transform: MultiViewTransform instance to apply
+        """
+        self.transform = transform
+
+    def __call__(
+        self, batch: List[Tuple[Dict[str, torch.Tensor], int]]
+    ) -> Tuple[Dict[str, torch.Tensor], torch.Tensor]:
+        """Apply consistent transforms then collate."""
+        transformed_batch = []
+        for images_dict, label in batch:
+            transformed_images = self.transform(images_dict)
+            transformed_batch.append((transformed_images, label))
+        return multiview_collate_fn(transformed_batch)
 
 
 def multiview_collate_fn(
-    batch: List[Tuple[Dict[float, torch.Tensor], int]],
-) -> Tuple[Dict[float, torch.Tensor], torch.Tensor]:
+    batch: List[Tuple[Dict[str, torch.Tensor], int]],
+) -> Tuple[Dict[str, torch.Tensor], torch.Tensor]:
     """Custom collate function for multi-view mode.
 
     Converts list of (images_dict, label) to batched format.
@@ -26,10 +64,14 @@ def multiview_collate_fn(
         batch: List of (images_dict, label) tuples from dataset
 
     Returns:
-        images: Dict mapping time_scale -> batched tensor (B, C, H, W)
+        images: Dict mapping time_scale string -> batched tensor (B, C, H, W)
         labels: Tensor of shape (B,)
+
+    Raises:
+        CollateError: If batch is empty, has inconsistent keys, or shape mismatches
     """
-    assert len(batch) > 0, "Empty batch received"
+    if len(batch) == 0:
+        raise CollateError("Empty batch received")
 
     images_list, labels = zip(*batch)
 
@@ -37,23 +79,27 @@ def multiview_collate_fn(
 
     # Validate all samples have consistent time scales
     for i, img_dict in enumerate(images_list):
-        assert set(img_dict.keys()) == set(time_scales), (
-            f"Sample {i} has inconsistent time scales: {set(img_dict.keys())} vs {set(time_scales)}"
-        )
+        if set(img_dict.keys()) != set(time_scales):
+            raise CollateError(
+                f"Sample {i} has inconsistent time scales: "
+                f"{set(img_dict.keys())} vs expected {set(time_scales)}"
+            )
 
-    batched_images: Dict[float, torch.Tensor] = {}
+    batched_images: Dict[str, torch.Tensor] = {}
     for ts in time_scales:
         tensors = [img[ts] for img in images_list]
         # Validate shapes before stacking
         first_shape = tensors[0].shape
         for i, t in enumerate(tensors):
-            assert t.shape == first_shape, (
-                f"Shape mismatch at time_scale {ts}, sample {i}: {t.shape} vs {first_shape}"
-            )
+            if t.shape != first_shape:
+                raise CollateError(
+                    f"Shape mismatch at time_scale '{ts}', sample {i}: "
+                    f"{t.shape} vs expected {first_shape}"
+                )
         batched_images[ts] = torch.stack(tensors)  # shape: (B, C, H, W)
 
-    labels = torch.tensor(labels, dtype=torch.long)  # shape: (B,)
-    return batched_images, labels
+    labels_tensor = torch.tensor(labels, dtype=torch.long)  # shape: (B,)
+    return batched_images, labels_tensor
 
 
 def create_dataloader(
@@ -70,6 +116,7 @@ def create_dataloader(
     augmentation: Optional[Dict] = None,
     class_names: Optional[List[str]] = None,
     shuffle: Optional[bool] = None,
+    consistent_multiview_transforms: bool = True,
 ) -> DataLoader:
     """Create a DataLoader for a specific split.
 
@@ -87,6 +134,9 @@ def create_dataloader(
         augmentation: Augmentation settings dict
         class_names: List of class names for label encoding
         shuffle: Whether to shuffle (default: True for train, False otherwise)
+        consistent_multiview_transforms: If True (default), apply same random
+            spatial transforms to all views in multi-view mode. Only affects
+            training transforms.
 
     Returns:
         Configured DataLoader
@@ -97,18 +147,31 @@ def create_dataloader(
 
     # Get appropriate transforms
     if split == "train":
-        transform = get_train_transforms(
+        base_transform = get_train_transforms(
             image_size=image_size,
             mean=mean,
             std=std,
             augmentation=augmentation,
         )
     else:
-        transform = get_eval_transforms(
+        base_transform = get_eval_transforms(
             image_size=image_size,
             mean=mean,
             std=std,
         )
+
+    # For multi-view mode with training, wrap transform to ensure consistency
+    if mode == "multi" and split == "train" and consistent_multiview_transforms:
+        # Create a MultiViewTransform wrapper, but we'll apply it differently
+        # since the dataset applies transforms per-image
+        # We need to use MultiViewTransform at the dataset level
+        multiview_transform = MultiViewTransform(
+            base_transform, consistent_spatial=True
+        )
+        transform = None  # Dataset won't apply per-image transforms
+    else:
+        multiview_transform = None
+        transform = base_transform
 
     # Create dataset
     dataset = GravitySpyDataset(
@@ -120,8 +183,13 @@ def create_dataloader(
         class_names=class_names,
     )
 
-    # Select collate function based on mode
-    collate_fn = multiview_collate_fn if mode == "multi" else None
+    # If using multiview transform, we need a custom collate that applies it
+    if multiview_transform is not None:
+        collate_fn = MultiViewTransformCollate(multiview_transform)
+    elif mode == "multi":
+        collate_fn = multiview_collate_fn
+    else:
+        collate_fn = None
 
     return DataLoader(
         dataset,
@@ -132,6 +200,7 @@ def create_dataloader(
         collate_fn=collate_fn,
         drop_last=split == "train",
         persistent_workers=num_workers > 0,
+        worker_init_fn=worker_init_fn if num_workers > 0 else None,
     )
 
 
