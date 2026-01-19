@@ -8,7 +8,7 @@ GravityViT applies Vision Transformer architectures to classify transient noise 
 
 ## Project Status
 
-Data pipeline complete. Core model implementation in progress. See Linear board for current sprint tasks.
+**Data pipeline complete and tested.** Core model implementation in progress. See Linear board for current sprint tasks.
 
 ## Architecture
 
@@ -113,3 +113,28 @@ Gravity Spy training set from Zenodo (DOI: 10.5281/zenodo.1476156):
 - Each sample has 4 spectrogram views at different time durations (0.5s, 1.0s, 2.0s, 4.0s)
 - Significant class imbalance (see `notebooks/01_data_exploration.py` for analysis)
 - Pre-computed class weights saved to `data/gravityspy/class_weights.npy` after running exploration
+
+## Data Pipeline
+
+The `src/data/` module provides a production-ready data loading pipeline:
+
+```python
+from src.data import GravitySpyDataset, create_dataloader, TIME_SCALE_KEYS
+
+# Single-view mode (one time scale)
+loader = create_dataloader(root="data/gravityspy", split="train", mode="single", time_scale=1.0)
+
+# Multi-view mode (all 4 time scales with consistent augmentation)
+loader = create_dataloader(root="data/gravityspy", split="train", mode="multi")
+
+# Context manager for safe resource handling
+with GravitySpyDataset(root, split="train") as dataset:
+    image, label = dataset[0]
+```
+
+Key implementation details:
+- **String keys for time scales**: Uses `"0.5"`, `"1.0"`, `"2.0"`, `"4.0"` (not floats) to avoid comparison issues
+- **Multiprocessing safe**: HDF5 handles managed per-worker, use `worker_init_fn` with DataLoader
+- **Consistent multi-view transforms**: `MultiViewTransform` ensures same spatial augmentation across all views
+- **Class weight validation**: `get_class_weights()` validates all classes exist in split
+- **Custom exceptions**: `HDF5AccessError`, `CollateError` for detailed error context
