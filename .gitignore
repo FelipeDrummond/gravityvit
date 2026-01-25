@@ -36,7 +36,7 @@ env/
 # Jupyter notebooks
 .ipynb_checkpoints/
 
-# Data (root data directory only, not src/data/ or configs/data/)
+# Data (root data directory only, not src/data/)
 /data/
 *.h5
 *.hdf5
