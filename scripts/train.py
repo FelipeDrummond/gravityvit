@@ -15,7 +15,7 @@ import numpy as np
 import torch
 from omegaconf import DictConfig, OmegaConf
 
-from src.data.dataset import create_dataloaders, get_class_weights
+from src.data import create_dataloaders
 from src.training.trainer import Trainer
 
 logger = logging.getLogger(__name__)
@@ -84,10 +84,7 @@ def main(cfg: DictConfig):
 
     set_seed(cfg.experiment.seed)
 
-    multi_view = cfg.model.type == "multiview_vit"
-    train_loader, val_loader, test_loader = create_dataloaders(
-        cfg, multi_view=multi_view
-    )
+    train_loader, val_loader, test_loader, class_names = create_dataloaders(cfg)
 
     logger.info(f"Train samples: {len(train_loader.dataset)}")
     logger.info(f"Val samples: {len(val_loader.dataset)}")
@@ -98,9 +95,11 @@ def main(cfg: DictConfig):
     from src.utils import get_device
 
     device = get_device(cfg.train.get("device", "auto"))
-    class_weights = get_class_weights(cfg, device)
 
-    class_names = train_loader.dataset.classes
+    # Get class weights from the training dataset if configured
+    class_weights = None
+    if cfg.data.get("use_class_weights", False):
+        class_weights = train_loader.dataset.get_class_weights().to(device)
 
     trainer = Trainer(
         model=model,
