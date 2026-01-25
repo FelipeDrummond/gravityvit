@@ -122,10 +122,17 @@ class MetricTracker:
         preds = np.concatenate(self.all_preds)
         targets = np.concatenate(self.all_targets)
 
+        unique_labels = np.unique(np.concatenate([targets, preds]))
+        if self.class_names is not None:
+            target_names = [self.class_names[i] for i in unique_labels]
+        else:
+            target_names = None
+
         return classification_report(
             targets,
             preds,
-            target_names=self.class_names,
+            labels=unique_labels,
+            target_names=target_names,
             zero_division=0,
         )
 

@@ -1,0 +1,29 @@
+# GravitySpy dataset configuration
+
+name: gravityspy
+data_dir: data/gravityspy
+hdf5_file: trainingsetv1d0.h5
+metadata_file: trainingset_v1d0_metadata.csv
+
+# Time scales available in the dataset (spectrogram durations in seconds)
+time_scales: [0.5, 1.0, 2.0, 4.0]
+default_time_scale: 1.0
+
+# Input preprocessing
+input_size: 224
+in_channels: 3
+
+# Data loading
+batch_size: 32
+num_workers: 4
+pin_memory: true
+
+# Class weights for imbalanced data
+use_class_weights: true
+class_weights_file: data/gravityspy/class_weights.npy
+
+# Train/val/test split ratios (from metadata)
+# Using existing splits from the metadata file
+
+# Sample size for quick experiments (fraction of data to use, 1.0 = full dataset)
+sample_size: 1.0
