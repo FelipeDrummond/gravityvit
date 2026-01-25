@@ -10,6 +10,7 @@ from sklearn.metrics import (
     classification_report,
     confusion_matrix,
     f1_score,
+    precision_recall_fscore_support,
 )
 
 
@@ -135,6 +136,55 @@ class MetricTracker:
             target_names=target_names,
             zero_division=0,
         )
+
+    def get_per_class_metrics(self) -> dict[str, dict[str, float]]:
+        """
+        Return per-class precision, recall, F1, and support.
+
+        Returns:
+            Dictionary mapping class name (or index) to metrics dict:
+            {"class_name": {"precision": 0.9, "recall": 0.8, "f1": 0.85, "support": 100}}
+        """
+        if not self.all_preds:
+            return {}
+
+        preds = np.concatenate(self.all_preds)
+        targets = np.concatenate(self.all_targets)
+
+        unique_labels = np.unique(np.concatenate([targets, preds]))
+        precision, recall, f1, support = precision_recall_fscore_support(
+            targets, preds, labels=unique_labels, zero_division=0
+        )
+
+        result = {}
+        for i, label in enumerate(unique_labels):
+            if self.class_names is not None and label < len(self.class_names):
+                key = self.class_names[label]
+            else:
+                key = str(label)
+            result[key] = {
+                "precision": float(precision[i]),
+                "recall": float(recall[i]),
+                "f1": float(f1[i]),
+                "support": int(support[i]),
+            }
+
+        return result
+
+    def get_predictions(self) -> tuple[np.ndarray, np.ndarray]:
+        """
+        Return raw predictions and targets for external analysis.
+
+        Returns:
+            Tuple of (predictions, targets) as numpy arrays.
+            Returns empty arrays if no predictions accumulated.
+        """
+        if not self.all_preds:
+            return np.array([]), np.array([])
+
+        preds = np.concatenate(self.all_preds)
+        targets = np.concatenate(self.all_targets)
+        return preds, targets
 
 
 def compute_accuracy(preds: torch.Tensor, targets: torch.Tensor) -> float:
