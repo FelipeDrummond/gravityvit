@@ -7,6 +7,7 @@ Run with Hydra configuration:
 """
 
 import logging
+import os
 import random
 
 import hydra
@@ -22,6 +23,7 @@ logger = logging.getLogger(__name__)
 
 def set_seed(seed: int):
     """Set random seeds for reproducibility."""
+    os.environ["PYTHONHASHSEED"] = str(seed)
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)

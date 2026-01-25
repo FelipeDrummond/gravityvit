@@ -51,14 +51,19 @@ class MetricTracker:
 
         Args:
             preds: Model outputs of shape (N, C) or predictions (N,)
-            targets: Target labels of shape (N,)
+            targets: Target labels of shape (N,) as tensor or numpy array
             loss: Optional batch loss value
         """
         if preds.dim() == 2:
             preds = preds.argmax(dim=1)
 
         self.all_preds.append(preds.cpu().numpy())
-        self.all_targets.append(targets.cpu().numpy())
+
+        # Handle both tensor and numpy array inputs for targets
+        if isinstance(targets, np.ndarray):
+            self.all_targets.append(targets)
+        else:
+            self.all_targets.append(targets.cpu().numpy())
 
         if loss is not None:
             self.total_loss += loss
@@ -91,14 +96,22 @@ class MetricTracker:
 
         return metrics
 
-    def get_confusion_matrix(self) -> np.ndarray:
-        """Return confusion matrix from accumulated predictions."""
+    def get_confusion_matrix(self, labels: Optional[int] = None) -> np.ndarray:
+        """
+        Return confusion matrix from accumulated predictions.
+
+        Args:
+            labels: Number of classes. If provided, ensures the confusion matrix
+                has shape (labels, labels) even if some classes have no samples.
+        """
         if not self.all_preds:
             return np.array([])
 
         preds = np.concatenate(self.all_preds)
         targets = np.concatenate(self.all_targets)
 
+        if labels is not None:
+            return confusion_matrix(targets, preds, labels=list(range(labels)))
         return confusion_matrix(targets, preds)
 
     def get_classification_report(self) -> str:

@@ -345,3 +345,90 @@ class TestBestModelTracking:
             assert trainer._check_best_model({"loss": 0.5})
             assert not trainer._check_best_model({"loss": 0.7})
             assert trainer._check_best_model({"loss": 0.3})
+
+
+class TestTestMethod:
+    def test_test_method_runs(self, simple_model, dummy_dataloader, trainer_config):
+        """Test method should evaluate on test set."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            trainer_config.hydra.run.dir = tmpdir
+
+            with patch("mlflow.set_experiment"), patch("mlflow.start_run"):
+                trainer = Trainer(
+                    model=simple_model,
+                    train_loader=dummy_dataloader,
+                    val_loader=dummy_dataloader,
+                    test_loader=dummy_dataloader,
+                    cfg=trainer_config,
+                )
+
+            metrics = trainer.test()
+
+            assert "loss" in metrics
+            assert "accuracy" in metrics
+            assert "balanced_accuracy" in metrics
+
+    def test_test_method_raises_without_loader(
+        self, simple_model, dummy_dataloader, trainer_config
+    ):
+        """Test method should raise if no test_loader provided."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            trainer_config.hydra.run.dir = tmpdir
+
+            with patch("mlflow.set_experiment"), patch("mlflow.start_run"):
+                trainer = Trainer(
+                    model=simple_model,
+                    train_loader=dummy_dataloader,
+                    val_loader=dummy_dataloader,
+                    cfg=trainer_config,
+                )
+
+            with pytest.raises(ValueError, match="test_loader was not provided"):
+                trainer.test()
+
+
+class TestSchedulerValidation:
+    def test_warmup_epochs_validation(
+        self, simple_model, dummy_dataloader, trainer_config
+    ):
+        """Should raise if warmup_epochs >= total epochs."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            trainer_config.hydra.run.dir = tmpdir
+            trainer_config.train.epochs = 5
+            trainer_config.train.scheduler.warmup_epochs = 5
+
+            with pytest.raises(
+                ValueError, match="warmup_epochs.*must be < total epochs"
+            ):
+                with patch("mlflow.set_experiment"), patch("mlflow.start_run"):
+                    Trainer(
+                        model=simple_model,
+                        train_loader=dummy_dataloader,
+                        val_loader=dummy_dataloader,
+                        cfg=trainer_config,
+                    )
+
+
+class TestAMPWarning:
+    def test_amp_warning_on_cpu(
+        self, simple_model, dummy_dataloader, trainer_config, caplog
+    ):
+        """Should warn when mixed precision requested on CPU."""
+        import logging
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            trainer_config.hydra.run.dir = tmpdir
+            trainer_config.train.mixed_precision = True
+            trainer_config.train.device = "cpu"
+
+            with caplog.at_level(logging.WARNING):
+                with patch("mlflow.set_experiment"), patch("mlflow.start_run"):
+                    trainer = Trainer(
+                        model=simple_model,
+                        train_loader=dummy_dataloader,
+                        val_loader=dummy_dataloader,
+                        cfg=trainer_config,
+                    )
+
+            assert trainer.use_amp is False
+            assert "Mixed precision requested but device is cpu" in caplog.text

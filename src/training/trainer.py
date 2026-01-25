@@ -73,11 +73,16 @@ class Trainer:
         # Learning rate scheduler
         self.scheduler = self._create_scheduler()
 
-        # Mixed precision
+        # Mixed precision (only supported on CUDA)
         self.use_amp = cfg.train.mixed_precision and self.device.type == "cuda"
         self.scaler = GradScaler("cuda") if self.use_amp else None
         if self.use_amp:
             logger.info("Mixed precision training enabled")
+        elif cfg.train.mixed_precision and self.device.type != "cuda":
+            logger.warning(
+                f"Mixed precision requested but device is {self.device.type}. "
+                "AMP disabled (only supported on CUDA)."
+            )
 
         # Gradient clipping
         self.grad_clip = cfg.train.get("grad_clip", 1.0)
@@ -112,11 +117,16 @@ class Trainer:
         self.train_metrics = MetricTracker(class_names)
         self.val_metrics = MetricTracker(class_names)
 
-    def _create_scheduler(self):
+    def _create_scheduler(self) -> SequentialLR:
         """Create learning rate scheduler with warmup."""
         warmup_epochs = self.cfg.train.scheduler.get("warmup_epochs", 5)
         min_lr = self.cfg.train.scheduler.get("min_lr", 1e-6)
         total_epochs = self.cfg.train.epochs
+
+        if warmup_epochs >= total_epochs:
+            raise ValueError(
+                f"warmup_epochs ({warmup_epochs}) must be < total epochs ({total_epochs})"
+            )
 
         warmup_scheduler = LinearLR(
             self.optimizer,
@@ -146,51 +156,58 @@ class Trainer:
         """
         self._setup_mlflow()
 
-        epochs = self.cfg.train.epochs
-        logger.info(f"Starting training for {epochs} epochs")
+        try:
+            epochs = self.cfg.train.epochs
+            logger.info(f"Starting training for {epochs} epochs")
 
-        for epoch in range(epochs):
-            self.current_epoch = epoch
+            for epoch in range(epochs):
+                self.current_epoch = epoch
 
-            train_metrics = self._train_epoch()
-            val_metrics = self._validate_epoch()
+                train_metrics = self._train_epoch()
+                val_metrics = self._validate_epoch()
 
-            self._log_epoch_metrics(train_metrics, val_metrics)
+                self._log_epoch_metrics(train_metrics, val_metrics)
 
-            current_lr = self.optimizer.param_groups[0]["lr"]
-            logger.info(
-                f"Epoch {epoch + 1}/{epochs} - "
-                f"Train Loss: {train_metrics['loss']:.4f}, "
-                f"Val Loss: {val_metrics['loss']:.4f}, "
-                f"Val Acc: {val_metrics['accuracy']:.4f}, "
-                f"LR: {current_lr:.2e}"
-            )
+                current_lr = self.optimizer.param_groups[0]["lr"]
+                logger.info(
+                    f"Epoch {epoch + 1}/{epochs} - "
+                    f"Train Loss: {train_metrics['loss']:.4f}, "
+                    f"Val Loss: {val_metrics['loss']:.4f}, "
+                    f"Val Acc: {val_metrics['accuracy']:.4f}, "
+                    f"LR: {current_lr:.2e}"
+                )
 
-            is_best = self._check_best_model(val_metrics)
-            if self.save_best and is_best:
-                self._save_checkpoint(val_metrics, is_best=True)
-            if self.save_last:
-                self._save_checkpoint(val_metrics, is_best=False)
+                is_best = self._check_best_model(val_metrics)
+                if self.save_best and is_best:
+                    self._save_checkpoint(val_metrics, is_best=True)
+                if self.save_last:
+                    self._save_checkpoint(val_metrics, is_best=False)
 
-            if self._check_early_stopping(val_metrics):
-                logger.info(f"Early stopping triggered at epoch {epoch + 1}")
-                break
+                # Step scheduler before early stopping check to keep state consistent
+                self.scheduler.step()
 
-            self.scheduler.step()
+                if self._check_early_stopping(val_metrics):
+                    logger.info(f"Early stopping triggered at epoch {epoch + 1}")
+                    break
 
-        self._log_final_artifacts()
+            self._log_final_artifacts()
 
-        final_results = {
-            "best_val_accuracy": self.best_metric if self.es_mode == "max" else None,
-            "best_checkpoint": (
-                str(self.best_checkpoint_path) if self.best_checkpoint_path else None
-            ),
-            "final_epoch": self.current_epoch + 1,
-        }
+            final_results = {
+                "best_val_accuracy": (
+                    self.best_metric if self.es_mode == "max" else None
+                ),
+                "best_checkpoint": (
+                    str(self.best_checkpoint_path)
+                    if self.best_checkpoint_path
+                    else None
+                ),
+                "final_epoch": self.current_epoch + 1,
+            }
 
-        mlflow.end_run()
+            return final_results
 
-        return final_results
+        finally:
+            mlflow.end_run()
 
     def _train_epoch(self) -> dict:
         """Run single training epoch."""
@@ -257,6 +274,46 @@ class Trainer:
             self.val_metrics.update(outputs, targets, loss.item())
 
         return self.val_metrics.compute()
+
+    @torch.no_grad()
+    def test(self) -> dict:
+        """
+        Run evaluation on test set.
+
+        Returns:
+            Dictionary of test metrics
+
+        Raises:
+            ValueError: If test_loader was not provided
+        """
+        if self.test_loader is None:
+            raise ValueError("test_loader was not provided to Trainer")
+
+        self.model.eval()
+        test_metrics = MetricTracker(self.class_names)
+
+        for inputs, targets in self.test_loader:
+            inputs = inputs.to(self.device)
+            targets = targets.to(self.device)
+
+            if self.use_amp:
+                with autocast("cuda"):
+                    outputs = self.model(inputs)
+                    loss = self.criterion(outputs, targets)
+            else:
+                outputs = self.model(inputs)
+                loss = self.criterion(outputs, targets)
+
+            test_metrics.update(outputs, targets, loss.item())
+
+        metrics = test_metrics.compute()
+        logger.info(
+            f"Test Results - Loss: {metrics['loss']:.4f}, "
+            f"Accuracy: {metrics['accuracy']:.4f}, "
+            f"Balanced Accuracy: {metrics['balanced_accuracy']:.4f}"
+        )
+
+        return metrics
 
     def _check_early_stopping(self, metrics: dict) -> bool:
         """Check if early stopping should be triggered."""
@@ -386,19 +443,21 @@ class Trainer:
 
     def _log_confusion_matrix(self):
         """Save and log confusion matrix visualization."""
-        cm = self.val_metrics.get_confusion_matrix()
+        num_classes = len(self.class_names) if self.class_names else None
+        cm = self.val_metrics.get_confusion_matrix(labels=num_classes)
         if cm.size == 0:
             return
 
         fig, ax = plt.subplots(figsize=(12, 10))
 
+        tick_labels = self.class_names if self.class_names else list(range(cm.shape[0]))
         sns.heatmap(
             cm,
             annot=False,
             fmt="d",
             cmap="Blues",
-            xticklabels=self.class_names or range(cm.shape[0]),
-            yticklabels=self.class_names or range(cm.shape[1]),
+            xticklabels=tick_labels,
+            yticklabels=tick_labels,
             ax=ax,
         )
 
@@ -435,17 +494,29 @@ class Trainer:
                 if sum(len(p) for p in preds_list) >= num_samples:
                     break
 
-        images = torch.cat(images_list)[:num_samples]
-        preds = torch.cat(preds_list)[:num_samples]
-        targets = torch.cat(targets_list)[:num_samples]
+        if not images_list:
+            logger.warning("No validation samples available for prediction logging")
+            return
 
-        n_cols = 4
-        n_rows = (num_samples + n_cols - 1) // n_cols
+        images = torch.cat(images_list)
+        preds = torch.cat(preds_list)
+        targets = torch.cat(targets_list)
 
-        fig, axes = plt.subplots(n_rows, n_cols, figsize=(12, 3 * n_rows))
+        # Clamp to available samples
+        actual_samples = min(num_samples, len(images))
+        images = images[:actual_samples]
+        preds = preds[:actual_samples]
+        targets = targets[:actual_samples]
+
+        n_cols = min(4, actual_samples)
+        n_rows = (actual_samples + n_cols - 1) // n_cols
+
+        fig, axes = plt.subplots(
+            n_rows, n_cols, figsize=(12, 3 * n_rows), squeeze=False
+        )
         axes = axes.flatten()
 
-        for idx in range(num_samples):
+        for idx in range(actual_samples):
             ax = axes[idx]
             img = images[idx].permute(1, 2, 0).numpy()
             img = (img - img.min()) / (img.max() - img.min() + 1e-8)
@@ -467,7 +538,7 @@ class Trainer:
             )
             ax.axis("off")
 
-        for idx in range(num_samples, len(axes)):
+        for idx in range(actual_samples, len(axes)):
             axes[idx].axis("off")
 
         plt.tight_layout()
@@ -496,7 +567,13 @@ def load_checkpoint(
 
     Returns:
         Checkpoint dictionary with metadata
+
+    Warning:
+        This function uses weights_only=False to load optimizer/scheduler state,
+        which allows arbitrary code execution. Only load checkpoints from trusted
+        sources to avoid security risks.
     """
+    # weights_only=False required for optimizer/scheduler state but allows code execution
     checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
 
     model.load_state_dict(checkpoint["model_state_dict"])
