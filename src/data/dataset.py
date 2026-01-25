@@ -50,6 +50,8 @@ class GravitySpyDataset(Dataset):
         transform: Optional transform to apply to images
         class_names: List of class names (for label encoding). If provided,
             must contain all classes present in the split's metadata.
+        sample_size: Fraction of data to use (0.0-1.0). Useful for quick experiments.
+        seed: Random seed for reproducible sampling when sample_size < 1.0.
     """
 
     def __init__(
@@ -60,6 +62,8 @@ class GravitySpyDataset(Dataset):
         time_scale: float = 1.0,
         transform: Optional[Callable[[torch.Tensor], torch.Tensor]] = None,
         class_names: Optional[List[str]] = None,
+        sample_size: float = 1.0,
+        seed: int = 42,
     ):
         self.root = Path(root)
         self.split = split
@@ -88,6 +92,12 @@ class GravitySpyDataset(Dataset):
 
         if len(self.metadata) == 0:
             raise ValueError(f"No samples found for split '{split}'")
+
+        # Sample data if sample_size < 1.0 (for quick experiments)
+        if sample_size < 1.0:
+            n_samples = max(1, int(len(self.metadata) * sample_size))
+            self.metadata = self.metadata.sample(n=n_samples, random_state=seed)
+            self.metadata = self.metadata.reset_index(drop=True)
 
         # Get classes present in this split
         split_classes = set(self.metadata["label"].unique())

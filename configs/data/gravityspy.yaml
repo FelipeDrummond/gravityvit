@@ -16,6 +16,9 @@ batch_size: 32
 num_workers: 4
 pin_memory: true
 
+# Sample size for quick experiments (fraction of data to use, 1.0 = full dataset)
+sample_size: 1.0
+
 # Image settings
 image_size: 224
 normalize: true

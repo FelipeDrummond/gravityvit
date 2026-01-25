@@ -56,6 +56,9 @@ multirun/
 # Weights & Biases
 wandb/
 
+# MLflow
+mlruns/
+
 # Logs
 logs/
 *.log

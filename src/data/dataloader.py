@@ -117,6 +117,8 @@ def create_dataloader(
     class_names: Optional[List[str]] = None,
     shuffle: Optional[bool] = None,
     consistent_multiview_transforms: bool = True,
+    sample_size: float = 1.0,
+    seed: int = 42,
 ) -> DataLoader:
     """Create a DataLoader for a specific split.
 
@@ -137,6 +139,8 @@ def create_dataloader(
         consistent_multiview_transforms: If True (default), apply same random
             spatial transforms to all views in multi-view mode. Only affects
             training transforms.
+        sample_size: Fraction of data to use (0.0-1.0). Useful for quick experiments.
+        seed: Random seed for reproducible sampling.
 
     Returns:
         Configured DataLoader
@@ -181,6 +185,8 @@ def create_dataloader(
         time_scale=time_scale,
         transform=transform,
         class_names=class_names,
+        sample_size=sample_size,
+        seed=seed,
     )
 
     # If using multiview transform, we need a custom collate that applies it
@@ -255,6 +261,10 @@ def create_dataloaders(
     mode = "multi" if cfg.get("model", {}).get("name") == "multiview_vit" else "single"
     time_scale = data_cfg.get("time_scale", 1.0)
 
+    # Get sample_size for quick experiments
+    sample_size = data_cfg.get("sample_size", 1.0)
+    seed = cfg.get("experiment", {}).get("seed", 42)
+
     # Common kwargs for all loaders
     common_kwargs = {
         "root": root,
@@ -266,6 +276,8 @@ def create_dataloaders(
         "mean": mean,
         "std": std,
         "class_names": class_names,
+        "sample_size": sample_size,
+        "seed": seed,
     }
 
     train_loader = create_dataloader(
