@@ -6,9 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 GravityViT applies Vision Transformer architectures to classify transient noise artifacts ("glitches") in LIGO gravitational wave detector data. The goal is to explore whether attention-based models can outperform CNN baselines and provide interpretable insights into glitch morphology.
 
-## Project Status
-
-Data pipeline complete. Core model implementation in progress. See Linear board for current sprint tasks.
+**Project Status**: Data pipeline complete. Core model implementation in progress. See Linear board for current sprint tasks.
 
 ## Architecture
 
@@ -34,14 +32,7 @@ Supports both **Apple Silicon (MPS)** for local development and **CUDA** for tra
 
 ```bash
 # Create virtual environment with uv (recommended)
-uv venv
-source .venv/bin/activate
-uv pip install -r requirements.txt
-
-# Or with standard venv
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
+uv venv && source .venv/bin/activate && uv pip install -r requirements.txt
 
 # For CUDA on Linux VM (after activation):
 pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
@@ -50,66 +41,76 @@ pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
 pre-commit install
 ```
 
-Device selection is automatic (`train.device: auto` in config) - detects CUDA > MPS > CPU.
+Device selection is automatic (`train.device: auto`) - priority: CUDA > MPS > CPU.
 
 ## Commands
 
 ```bash
-# Download dataset from Zenodo
-python scripts/download_data.py                # Downloads HDF5 file (~3.3 GB)
-python scripts/download_data.py --include-png  # Also download PNG archive (~9.6 GB)
+# Download dataset
+python scripts/download_data.py                # HDF5 file (~3.3 GB)
+python scripts/download_data.py --include-png  # Also PNG archive (~9.6 GB)
 
-# Data exploration (Marimo notebook)
-marimo run notebooks/01_data_exploration.py
-marimo edit notebooks/01_data_exploration.py  # Interactive editing mode
+# Training with Hydra
+python scripts/train.py model=vit                           # Single-view ViT
+python scripts/train.py model=baseline_cnn                  # CNN baseline
+python scripts/train.py model=vit data.batch_size=64 train.epochs=50
+python scripts/train.py model=vit train.loss.name=focal_loss  # Focal loss for imbalance
 
-# Training (Hydra configuration)
-python scripts/train.py model=baseline_cnn
-python scripts/train.py model=multiview_vit
-python scripts/train.py model=vit data.batch_size=32 train.epochs=100
-
-# MLflow experiment tracking
-mlflow ui  # Opens dashboard at http://localhost:5000
+# Tests
+pytest tests/                           # All tests
+pytest tests/test_trainer.py            # Single test file
+pytest tests/test_trainer.py::TestTrainerTraining::test_full_training_loop -v  # Single test
 
 # Code quality
 pre-commit run --all-files
-pytest tests/
+
+# MLflow UI
+mlflow ui  # http://localhost:5000
 ```
 
-## Project Structure
+## Data Pipeline
 
+1. **HDF5 Structure**: `{class}/{split}/{sample_id}/{timescale}.png` - grayscale spectrograms
+2. **GravitySpyDataset** (`src/data/dataset.py`):
+   - Lazy-loads HDF5 for multiprocessing compatibility
+   - `multi_view=True` returns tensor of shape `(4, 3, H, W)` stacking all time scales
+   - `multi_view=False` returns single view `(3, H, W)` (grayscale replicated to RGB)
+   - Resizes to 224x224 for ViT input
+3. **Class weights**: Pre-computed in `data/gravityspy/class_weights.npy` (set `data.use_class_weights: true`)
+
+## Training Infrastructure
+
+The `Trainer` class (`src/training/trainer.py`) handles:
+- **AMP**: Automatic mixed precision on CUDA (`train.mixed_precision: true`)
+- **Gradient clipping**: Default 1.0 (`train.grad_clip`)
+- **LR schedule**: Linear warmup (5 epochs) + cosine annealing
+- **Early stopping**: Monitors `val_accuracy` with patience=10
+- **Checkpointing**: Saves `best_model.pt` and `last_model.pt` to Hydra output dir
+- **MLflow logging**: Metrics per epoch, confusion matrix, classification report
+
+**Loss functions** (`src/training/losses.py`):
+- `cross_entropy` with optional label smoothing (default 0.1)
+- `focal_loss` with configurable gamma (for class imbalance)
+
+**Metrics** (`src/training/metrics.py`):
+- `MetricTracker` accumulates predictions across batches
+- Computes: accuracy, balanced_accuracy, f1_macro, f1_weighted
+
+## Hydra Configuration
+
+Configs compose: `config.yaml` → `model/*.yaml`, `data/*.yaml`, `train/*.yaml`
+
+Override any value via CLI:
+```bash
+python scripts/train.py train.optimizer.lr=3e-4 train.scheduler.warmup_epochs=10
+python scripts/train.py +experiment.name=my_experiment  # Add new key
 ```
-src/
-├── data/          # Dataset loader, transforms
-├── models/        # CNN baseline, ViT, multi-view ViT
-├── training/      # Training loop, losses, metrics
-├── analysis/      # Attention visualization, GradCAM
-└── utils.py       # Device detection, helpers
 
-configs/
-├── config.yaml    # Main config (composes others)
-├── model/         # Model configs (baseline_cnn, vit, multiview_vit)
-├── data/          # Dataset config (gravityspy)
-└── train/         # Training config (default)
+Outputs go to `outputs/{experiment.name}/{timestamp}/`
 
-scripts/           # Entry points
-notebooks/         # Analysis notebooks
-tests/             # Unit tests
-```
+## Dataset Details
 
-## Technology Stack
-
-- **PyTorch 2.0+** with **Timm** for pretrained ViT models
-- **Hydra** for configuration management
-- **MLflow** for experiment tracking
-- **Marimo** for reactive notebooks (stored as .py files)
-- **scikit-learn** for evaluation metrics
-- **Pre-commit** with black, isort, flake8
-
-## Dataset
-
-Gravity Spy training set from Zenodo (DOI: 10.5281/zenodo.1476156):
+Gravity Spy training set (Zenodo DOI: 10.5281/zenodo.1476156):
 - ~8,500 labeled glitches across 22 morphological classes
-- Each sample has 4 spectrogram views at different time durations (0.5s, 1.0s, 2.0s, 4.0s)
-- Significant class imbalance (see `notebooks/01_data_exploration.py` for analysis)
-- Pre-computed class weights saved to `data/gravityspy/class_weights.npy` after running exploration
+- Each sample has 4 spectrogram views: 0.5s, 1.0s, 2.0s, 4.0s duration
+- Significant class imbalance (see `notebooks/01_data_exploration.py`)
